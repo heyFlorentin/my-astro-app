@@ -1,0 +1,38 @@
+name: Deploy Production
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx wrangler types
+      - run: npx astro check
+      - run: npx vitest run --reporter=verbose
+      - run: npx astro build
+      - name: Verify bundle size
+        run: |
+          SIZE=$(stat -c%s dist/_worker.js/index.js 2>/dev/null || echo 0)
+          SIZE_KB=$(( SIZE / 1024 ))
+          echo "Worker bundle: ${SIZE_KB} KB"
+          if [ "$SIZE_KB" -gt 900 ]; then
+            echo "ERROR: Bundle too large. Aborting deploy."
+            exit 1
+          fi
+      - name: Deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy --env production

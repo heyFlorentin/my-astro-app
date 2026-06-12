@@ -1,0 +1,13 @@
+---
+import BaseLayout from '@layouts/BaseLayout.astro';
+
+export const prerender = false;
+---
+
+<BaseLayout title="My Astro App">
+  <main>
+    <h1>Welcome to My Astro App</h1>
+    <p>Running on: <code>{Astro.locals.runtime.env.ENVIRONMENT}</code></p>
+    <p>Version: <code>{Astro.locals.runtime.env.APP_VERSION}</code></p>
+  </main>
+</BaseLayout>

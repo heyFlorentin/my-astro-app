@@ -1,0 +1,11 @@
+---
+import BaseLayout from '@layouts/BaseLayout.astro';
+
+export const prerender = false;
+---
+
+<BaseLayout title={`Post: ${Astro.params.slug}`}>
+  <main>
+    <h1>Dynamic Page: {Astro.params.slug}</h1>
+  </main>
+</BaseLayout>

@@ -1,0 +1,113 @@
+name: Maintenance Month
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Runs January 1st each year at 09:00 UTC
+    - cron: '0 9 1 1 *'
+
+jobs:
+  full-audit:
+    name: Annual Full-System Health Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: 1. Dependency Security Audit
+        run: npm audit --json > .reports/security-audit.json 2>&1 || true
+
+      - name: 2. Check Outdated Dependencies
+        run: npm outdated --json > .reports/outdated.json 2>&1 || true
+
+      - name: 3. Check for Available Major Updates
+        run: npx npm-check-updates --format json > .reports/major-updates.json 2>&1 || true
+
+      - name: 4. Bundle Size Analysis
+        run: |
+          npx astro build
+          SIZE=$(stat -c%s dist/_worker.js/index.js 2>/dev/null || echo 0)
+          echo "BUNDLE_SIZE_BYTES=$SIZE" >> $GITHUB_ENV
+          echo "Bundle size: $(( SIZE / 1024 )) KB"
+
+      - name: 5. Run Full Test Suite
+        run: |
+          npx vitest run --reporter=verbose || echo "TESTS_FAILED=true" >> $GITHUB_ENV
+          npx playwright install --with-deps chromium
+          npx playwright test || echo "E2E_FAILED=true" >> $GITHUB_ENV
+
+      - name: 6. Check CI/CD Configuration Freshness
+        run: |
+          echo "=== GitHub Actions Versions ==="
+          grep -r "uses:" .github/workflows/ | sort | uniq -c
+
+          echo "=== Wrangler Compatibility Date ==="
+          grep "compatibility_date" wrangler.jsonc
+
+          echo "=== Astro Version ==="
+          npx astro --version
+
+      - name: 7. Generate Health Report
+        run: |
+          cat > HEALTH_REPORT_$(date +%Y).md << 'REPORT_EOF'
+          # Annual Health Report — $(date +%Y)
+
+          ## Overall Assessment
+          [To be filled by developer after reviewing audit outputs]
+
+          ## Dependency Status
+          - Security audit: see .reports/security-audit.json
+          - Outdated packages: see .reports/outdated.json
+          - Major updates available: see .reports/major-updates.json
+
+          ## Worker Bundle
+          - Size: $(( ${BUNDLE_SIZE_BYTES} / 1024 )) KB / 900 KB limit
+
+          ## Test Results
+          - Unit tests: ${{ env.TESTS_FAILED == 'true' && 'FAILED' || 'PASSED' }}
+          - E2E tests: ${{ env.E2E_FAILED == 'true' && 'FAILED' || 'PASSED' }}
+
+          ## Configuration
+          - compatibility_date: [from wrangler.jsonc]
+          - Astro version: [from build output]
+          - Wrangler version: [from devDependencies]
+
+          ## Required Actions
+          - [ ] Update compatibility_date to current year
+          - [ ] Review and apply security patches
+          - [ ] Review major dependency updates
+          - [ ] Update GitHub Actions versions
+          - [ ] Review TRAE IDE rules/agents for drift
+          - [ ] Run full deploy:staging and verify
+          - [ ] Run full deploy:production and verify
+          REPORT_EOF
+
+      - name: 8. Upload Reports as Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: maintenance-reports-$(date +%Y)
+          path: |
+            .reports/
+            HEALTH_REPORT_*.md
+
+      - name: 9. Create Issue with Health Report
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('HEALTH_REPORT_$(date +%Y).md', 'utf8');
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '🏥 Annual Maintenance Report — $(date +%Y)',
+              body: report,
+              labels: ['maintenance', 'auto-generated']
+            });

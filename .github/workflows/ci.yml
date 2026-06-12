@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Lint & Type-Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx wrangler types
+      - run: npx astro check
+      - run: npx eslint src/ --ext .ts,.tsx,.astro
+
+  test-unit:
+    name: Unit Tests (Vitest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx vitest run --reporter=verbose
+
+  test-e2e:
+    name: E2E Tests (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npx astro build
+      - run: npx wrangler dev --port 4321 --test-scheduled &
+      - run: sleep 2 && npx playwright test
+        env:
+          PLAYWRIGHT_TEST_BASE_URL: http://localhost:4321
+
+  build:
+    name: Build & Bundle Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build
+      - name: Verify bundle size
+        run: |
+          SIZE=$(stat -c%s dist/_worker.js/index.js 2>/dev/null || echo 0)
+          SIZE_KB=$(( SIZE / 1024 ))
+          echo "Worker bundle: ${SIZE_KB} KB"
+          if [ "$SIZE_KB" -gt 900 ]; then
+            echo "ERROR: Bundle size ${SIZE_KB} KB exceeds 900 KB limit."
+            exit 1
+          fi
