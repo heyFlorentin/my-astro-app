@@ -20,7 +20,7 @@
     "maintenance:month": "bash scripts/maintenance-month.sh"
   },
   "dependencies": {
-    "@astrojs/cloudflare": "^12.6.0",
+    "@astrojs/cloudflare": "^13.7.0",
     "astro": "^6.0.0"
   },
   "devDependencies": {
